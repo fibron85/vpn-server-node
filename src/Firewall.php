@@ -9,8 +9,6 @@
 
 namespace LC\Node;
 
-use LC\Common\Config;
-
 class Firewall
 {
     /** @var int */
@@ -25,8 +23,8 @@ class Firewall
     }
 
     /**
-     * @param \LC\Common\Config               $firewallConfig
-     * @param array<string,\LC\Common\Config> $profileConfigList
+     * @param \LC\Node\Config               $firewallConfig
+     * @param array<string,\LC\Node\Config> $profileConfigList
      *
      * @return string
      */

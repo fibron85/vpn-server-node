@@ -9,7 +9,7 @@
 
 namespace LC\Node\Tests;
 
-use LC\Common\HttpClient\HttpClientInterface;
+use LC\Node\HttpClient\HttpClientInterface;
 use RuntimeException;
 
 class TestHttpClient implements HttpClientInterface
