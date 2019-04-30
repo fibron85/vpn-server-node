@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.0 (...)
+- remove `vpn-lib-common` dependency by adding the required files to the 
+  project directly
+
 ## 2.0.1 (2019-04-26)
 - update tests to deal with updates internal API error messages 
   (vpn-lib-common)
