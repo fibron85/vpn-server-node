@@ -46,7 +46,7 @@ class OpenVpn
             'ca' => sprintf('%s/ca.crt', $vpnTlsDir),
             'certificate' => sprintf('%s/server.crt', $vpnTlsDir),
             'private_key' => sprintf('%s/server.key', $vpnTlsDir),
-            'ta' => sprintf('%s/ta.key', $vpnTlsDir),
+            'tls_crypt' => sprintf('%s/tls-crypt.key', $vpnTlsDir),
         ];
 
         foreach ($certFileMapping as $k => $v) {
@@ -226,7 +226,7 @@ class OpenVpn
         }
 
         if ('tls-crypt' === $profileConfig->getItem('tlsProtection')) {
-            $serverConfig[] = sprintf('tls-crypt %s/ta.key', $tlsDir);
+            $serverConfig[] = sprintf('tls-crypt %s/tls-crypt.key', $tlsDir);
         }
 
         // Routes
