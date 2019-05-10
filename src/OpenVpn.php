@@ -10,7 +10,6 @@
 namespace LC\Node;
 
 use DateTime;
-use DateTimeZone;
 use LC\Node\Config\ProfileConfig;
 use LC\Node\HttpClient\ServerClient;
 use RuntimeException;
@@ -29,6 +28,9 @@ class OpenVpn
     /** @var string */
     private $vpnGroup;
 
+    /** @var \DateTime */
+    private $dateTime;
+
     /**
      * @param string $vpnConfigDir
      * @param string $libExecDir
@@ -42,6 +44,7 @@ class OpenVpn
         $this->libExecDir = $libExecDir;
         $this->vpnUser = $vpnUser;
         $this->vpnGroup = $vpnGroup;
+        $this->dateTime = new DateTime();
     }
 
     /**
@@ -80,9 +83,7 @@ class OpenVpn
             $this->writeProfile($profileId, $profileConfig);
 
             // generate a CN based on date and profile, instance
-            $dateTime = new DateTime('now', new DateTimeZone('UTC'));
-            $dateString = $dateTime->format('YmdHis');
-            $cn = sprintf('%s.%s', $dateString, $profileId);
+            $cn = sprintf('%s.%s', $this->dateTime->format('YmdHis'), $profileId);
             $vpnTlsDir = sprintf('%s/tls/%s', $this->vpnConfigDir, $profileId);
 
             $this->generateKeys($serverClient, $vpnTlsDir, $cn);
@@ -97,38 +98,28 @@ class OpenVpn
      */
     public function writeProfile($profileId, ProfileConfig $profileConfig)
     {
-        $range = new IP($profileConfig->getRangeFour());
-        $range6 = new IP($profileConfig->getRangeSix());
         $processCount = \count($profileConfig->getVpnProtoPorts());
-
-        $allowedProcessCount = [1, 2, 4, 8, 16];
+        $allowedProcessCount = [1, 2, 4, 8, 16, 32, 64];
         if (!\in_array($processCount, $allowedProcessCount, true)) {
-            throw new RuntimeException('"vpnProtoPorts" must contain 1,2,4,8 or 16 entries');
+            throw new RuntimeException('"vpnProtoPorts" must contain 1, 2, 4, 8, 16, 32 or 64 entries');
         }
-        $splitRange = $range->split($processCount);
-        $splitRange6 = $range6->split($processCount);
 
-        $managementIp = $profileConfig->getManagementIp();
+        $rangeFour = new IP($profileConfig->getRangeFour());
+        $rangeSix = new IP($profileConfig->getRangeSix());
+        $splitRangeFour = $rangeFour->split($processCount);
+        $splitRangeSix = $rangeSix->split($processCount);
+
         $profileNumber = $profileConfig->getProfileNumber();
 
-        $processConfig = [
-            'managementIp' => $managementIp,
-        ];
-
+        $processConfig = [];
         for ($i = 0; $i < $processCount; ++$i) {
-            list($proto, $port) = self::getProtoPort($profileConfig->getVpnProtoPorts(), $profileConfig->getListen())[$i];
-            $processConfig['range'] = $splitRange[$i];
-            $processConfig['range6'] = $splitRange6[$i];
-            $processConfig['dev'] = sprintf('tun-%d-%d', $profileConfig->getProfileNumber(), $i);
-            $processConfig['proto'] = $proto;
-            $processConfig['port'] = $port;
-            $processConfig['local'] = $profileConfig->getListen();
-            $processConfig['managementPort'] = 11940 + $this->toPort($profileNumber, $i);
-            $processConfig['configName'] = sprintf(
-                '%s-%d.conf',
-                $profileId,
-                $i
-            );
+            $processConfig['rangeFour'] = $splitRangeFour[$i];
+            $processConfig['rangeSix'] = $splitRangeSix[$i];
+            $processConfig['dev'] = sprintf('tun-%d-%d', $profileNumber, $i);
+            $processConfig['proto'] = self::getProto($profileConfig, $i);
+            $processConfig['port'] = self::getPort($profileConfig, $i);
+            $processConfig['managementPort'] = 11940 + self::toPort($profileNumber, $i);
+            $processConfig['configName'] = sprintf('%s-%d.conf', $profileId, $i);
 
             $this->writeProcess($profileId, $profileConfig, $processConfig);
         }
@@ -154,20 +145,31 @@ class OpenVpn
     }
 
     /**
-     * @param string $listenAddress
+     * @param \LC\Node\Config\ProfileConfig $profileConfig
+     * @param int                           $i
      *
-     * @return array
+     * @return string
      */
-    private static function getProtoPort(array $vpnProcesses, $listenAddress)
+    private static function getProto(ProfileConfig $profileConfig, $i)
     {
-        $convertedPortProto = [];
+        $vpnProtoPorts = $profileConfig->getVpnProtoPorts();
+        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPorts[$i]);
 
-        foreach ($vpnProcesses as $vpnProcess) {
-            list($proto, $port) = explode('/', $vpnProcess);
-            $convertedPortProto[] = [self::getFamilyProto($listenAddress, $proto), $port];
-        }
+        return self::getFamilyProto($profileConfig->getListen(), $vpnProto);
+    }
 
-        return $convertedPortProto;
+    /**
+     * @param \LC\Node\Config\ProfileConfig $profileConfig
+     * @param int                           $i
+     *
+     * @return int
+     */
+    private static function getPort(ProfileConfig $profileConfig, $i)
+    {
+        $vpnProtoPorts = $profileConfig->getVpnProtoPorts();
+        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPorts[$i]);
+
+        return (int) $vpnPort;
     }
 
     /**
@@ -179,8 +181,8 @@ class OpenVpn
     {
         $tlsDir = sprintf('tls/%s', $profileId);
 
-        $rangeIp = new IP($processConfig['range']);
-        $range6Ip = new IP($processConfig['range6']);
+        $rangeFourIp = new IP($processConfig['rangeFour']);
+        $rangeSixIp = new IP($processConfig['rangeSix']);
 
         // static options
         $serverConfig = [
@@ -203,16 +205,16 @@ class OpenVpn
             sprintf('ca %s/ca.crt', $tlsDir),
             sprintf('cert %s/server.crt', $tlsDir),
             sprintf('key %s/server.key', $tlsDir),
-            sprintf('server %s %s', $rangeIp->getNetwork(), $rangeIp->getNetmask()),
-            sprintf('server-ipv6 %s', $range6Ip->getAddressPrefix()),
-            sprintf('max-clients %d', $rangeIp->getNumberOfHosts() - 1),
+            sprintf('server %s %s', $rangeFourIp->getNetwork(), $rangeFourIp->getNetmask()),
+            sprintf('server-ipv6 %s', $rangeSixIp->getAddressPrefix()),
+            sprintf('max-clients %d', $rangeFourIp->getNumberOfHosts() - 1),
             'script-security 2',
             sprintf('dev %s', $processConfig['dev']),
             sprintf('port %d', $processConfig['port']),
-            sprintf('management %s %d', $processConfig['managementIp'], $processConfig['managementPort']),
+            sprintf('management %s %d', $profileConfig->getManagementIp(), $processConfig['managementPort']),
             sprintf('setenv PROFILE_ID %s', $profileId),
             sprintf('proto %s', $processConfig['proto']),
-            sprintf('local %s', $processConfig['local']),
+            sprintf('local %s', $profileConfig->getListen()),
             sprintf('tls-crypt %s/tls-crypt.key', $tlsDir),
         ];
 
@@ -238,7 +240,7 @@ class OpenVpn
         $serverConfig = array_merge($serverConfig, self::getRoutes($profileConfig));
 
         // DNS
-        $serverConfig = array_merge($serverConfig, self::getDns($rangeIp, $range6Ip, $profileConfig));
+        $serverConfig = array_merge($serverConfig, self::getDns($rangeFourIp, $rangeSixIp, $profileConfig));
 
         // Client-to-client
         $serverConfig = array_merge($serverConfig, self::getClientToClient($profileConfig));
@@ -307,7 +309,7 @@ class OpenVpn
     /**
      * @return array
      */
-    private static function getDns(IP $rangeIp, IP $range6Ip, ProfileConfig $profileConfig)
+    private static function getDns(IP $rangeFourIp, IP $rangeSixIp, ProfileConfig $profileConfig)
     {
         $dnsEntries = [];
         if ($profileConfig->getDefaultGateway()) {
@@ -318,10 +320,10 @@ class OpenVpn
         foreach ($dnsList as $dnsAddress) {
             // replace the macros by IP addresses (LOCAL_DNS)
             if ('@GW4@' === $dnsAddress) {
-                $dnsAddress = $rangeIp->getFirstHost();
+                $dnsAddress = $rangeFourIp->getFirstHost();
             }
             if ('@GW6@' === $dnsAddress) {
-                $dnsAddress = $range6Ip->getFirstHost();
+                $dnsAddress = $rangeSixIp->getFirstHost();
             }
             $dnsEntries[] = sprintf('push "dhcp-option DNS %s"', $dnsAddress);
         }
@@ -338,13 +340,13 @@ class OpenVpn
             return [];
         }
 
-        $rangeIp = new IP($profileConfig->getRangeFour());
-        $range6Ip = new IP($profileConfig->getRangeSix());
+        $rangeFourIp = new IP($profileConfig->getRangeFour());
+        $rangeSixIp = new IP($profileConfig->getRangeSix());
 
         return [
             'client-to-client',
-            sprintf('push "route %s %s"', $rangeIp->getAddress(), $rangeIp->getNetmask()),
-            sprintf('push "route-ipv6 %s"', $range6Ip->getAddressPrefix()),
+            sprintf('push "route %s %s"', $rangeFourIp->getAddress(), $rangeFourIp->getNetmask()),
+            sprintf('push "route-ipv6 %s"', $rangeSixIp->getAddressPrefix()),
         ];
     }
 
@@ -354,7 +356,7 @@ class OpenVpn
      *
      * @return int
      */
-    private function toPort($profileNumber, $processNumber)
+    private static function toPort($profileNumber, $processNumber)
     {
         // we have 2^16 - 11940 ports available for management ports, so let's
         // say we have 2^14 ports available to distribute over profiles and
