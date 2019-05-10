@@ -21,7 +21,7 @@ class TestHttpClient implements HttpClientInterface
                 return self::wrapData('instance_number', 1);
 
             case 'openVpnServerClient/profile_list':
-                return self::wrapData('profile_list', '{"default":{"aclPermissionList":[],"blockLan":false,"clientToClient":false,"defaultGateway":true,"displayName":"Default Profile","dns":[],"enableAcl":false,"enableLog":false,"exposedVpnProtoPorts":[],"hideProfile":false,"hostName":"vpn.example","listen":"::","managementIp":"127.0.0.1","profileNumber":1,"rangeFour":"10.42.42.0\/25","rangeSix":"fd42:4242:4242:4242::\/64","routes":[],"vpnProtoPorts":["udp\/1194","tcp\/1194"]}}');
+                return self::wrapData('profile_list', '{"default":{"aclPermissionList":[],"blockLan":false,"clientToClient":false,"defaultGateway":true,"displayName":"Default Profile","dns":[],"enableAcl":false,"enableLog":false,"exposedVpnProtoPortList":[],"hideProfile":false,"hostName":"vpn.example","listen":"::","managementIp":"127.0.0.1","profileNumber":1,"rangeFour":"10.42.42.0\/25","rangeSix":"fd42:4242:4242:4242::\/64","routes":[],"vpnProtoPortList":["udp\/1194","tcp\/1194"]}}');
             default:
                 throw new RuntimeException(sprintf('unexpected requestUri "%s"', $requestUri));
         }

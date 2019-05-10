@@ -98,10 +98,10 @@ class OpenVpn
      */
     public function writeProfile($profileId, ProfileConfig $profileConfig)
     {
-        $processCount = \count($profileConfig->getVpnProtoPorts());
+        $processCount = \count($profileConfig->getVpnProtoPortList());
         $allowedProcessCount = [1, 2, 4, 8, 16, 32, 64];
         if (!\in_array($processCount, $allowedProcessCount, true)) {
-            throw new RuntimeException('"vpnProtoPorts" must contain 1, 2, 4, 8, 16, 32 or 64 entries');
+            throw new RuntimeException('"vpnProtoPortList" must contain 1, 2, 4, 8, 16, 32 or 64 entries');
         }
 
         $rangeFour = new IP($profileConfig->getRangeFour());
@@ -152,8 +152,8 @@ class OpenVpn
      */
     private static function getProto(ProfileConfig $profileConfig, $i)
     {
-        $vpnProtoPorts = $profileConfig->getVpnProtoPorts();
-        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPorts[$i]);
+        $vpnProtoPortList = $profileConfig->getVpnProtoPortList();
+        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPortList[$i]);
 
         return self::getFamilyProto($profileConfig->getListen(), $vpnProto);
     }
@@ -166,8 +166,8 @@ class OpenVpn
      */
     private static function getPort(ProfileConfig $profileConfig, $i)
     {
-        $vpnProtoPorts = $profileConfig->getVpnProtoPorts();
-        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPorts[$i]);
+        $vpnProtoPortList = $profileConfig->getVpnProtoPortList();
+        list($vpnProto, $vpnPort) = explode('/', $vpnProtoPortList[$i]);
 
         return (int) $vpnPort;
     }
