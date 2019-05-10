@@ -10,8 +10,9 @@
 require_once dirname(__DIR__).'/vendor/autoload.php';
 $baseDir = dirname(__DIR__);
 
-use LC\Node\Config;
+use LC\Node\Config\NodeConfig;
 use LC\Node\Connection;
+use LC\Node\FileIO;
 use LC\Node\HttpClient\CurlHttpClient;
 use LC\Node\HttpClient\Exception\ApiException;
 use LC\Node\HttpClient\ServerClient;
@@ -37,13 +38,13 @@ try {
     }
 
     $configDir = sprintf('%s/config', $baseDir);
-    $config = Config::fromFile(
+    $nodeConfig = NodeConfig::fromFile(
         sprintf('%s/config.php', $configDir)
     );
 
     $serverClient = new ServerClient(
-        new CurlHttpClient([$config->getItem('apiUser'), $config->getItem('apiPass')]),
-        $config->getItem('apiUri')
+        new CurlHttpClient(['vpn-server-node', FileIO::readFile(sprintf('%s/node-api.key', $configDir))]),
+        $nodeConfig->getApiUrl()
     );
 
     $connection = new Connection($serverClient);

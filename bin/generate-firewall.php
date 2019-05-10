@@ -10,7 +10,7 @@
 require_once dirname(__DIR__).'/vendor/autoload.php';
 $baseDir = dirname(__DIR__);
 
-use LC\Node\Config;
+use LC\Node\Config\NodeConfig;
 use LC\Node\FileIO;
 use LC\Node\Firewall;
 use LC\Node\HttpClient\CurlHttpClient;
@@ -25,17 +25,17 @@ try {
         }
     }
     $configDir = sprintf('%s/config', $baseDir);
-    $mainConfig = Config::fromFile(sprintf('%s/config.php', $configDir));
+    $nodeConfig = NodeConfig::fromFile(sprintf('%s/config.php', $configDir));
     $firewallConfig = Config::fromFile(sprintf('%s/firewall.php', $configDir));
 
     $serverClient = new ServerClient(
         new CurlHttpClient(
             [
-                $mainConfig->getItem('apiUser'),
-                $mainConfig->getItem('apiPass'),
+                'vpn-server-node',
+                FileIO::readFile(sprintf('%s/node-api.key', $configDir)),
             ]
         ),
-        $mainConfig->getItem('apiUri')
+        $nodeConfig->getApiUrl()
     );
 
     $profileList = $serverClient->getRequireArray('profile_list');

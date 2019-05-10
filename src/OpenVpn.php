@@ -11,24 +11,37 @@ namespace LC\Node;
 
 use DateTime;
 use DateTimeZone;
+use LC\Node\Config\ProfileConfig;
 use LC\Node\HttpClient\ServerClient;
 use RuntimeException;
 
 class OpenVpn
 {
-    // CentOS
-    const LIBEXEC_DIR = '/usr/libexec/vpn-server-node';
-
     /** @var string */
     private $vpnConfigDir;
 
+    /** @var string */
+    private $libExecDir;
+
+    /** @var string */
+    private $vpnUser;
+
+    /** @var string */
+    private $vpnGroup;
+
     /**
      * @param string $vpnConfigDir
+     * @param string $libExecDir
+     * @param string $vpnUser
+     * @param string $vpnGroup
      */
-    public function __construct($vpnConfigDir)
+    public function __construct($vpnConfigDir, $libExecDir, $vpnUser, $vpnGroup)
     {
         FileIO::createDir($vpnConfigDir, 0700);
         $this->vpnConfigDir = $vpnConfigDir;
+        $this->libExecDir = $libExecDir;
+        $this->vpnUser = $vpnUser;
+        $this->vpnGroup = $vpnGroup;
     }
 
     /**
@@ -55,20 +68,14 @@ class OpenVpn
     }
 
     /**
-     * @param string $vpnUser
-     * @param string $vpnGroup
-     *
      * @return void
      */
-    public function writeProfiles(ServerClient $serverClient, $vpnUser, $vpnGroup)
+    public function writeProfiles(ServerClient $serverClient)
     {
         $profileList = $serverClient->getRequireArray('profile_list');
-
         $profileIdList = array_keys($profileList);
         foreach ($profileIdList as $profileId) {
             $profileConfigData = $profileList[$profileId];
-            $profileConfigData['_user'] = $vpnUser;
-            $profileConfigData['_group'] = $vpnGroup;
             $profileConfig = new ProfileConfig($profileConfigData);
             $this->writeProfile($profileId, $profileConfig);
 
@@ -83,15 +90,16 @@ class OpenVpn
     }
 
     /**
-     * @param string $profileId
+     * @param string                        $profileId
+     * @param \LC\Node\Config\ProfileConfig $profileConfig
      *
      * @return void
      */
     public function writeProfile($profileId, ProfileConfig $profileConfig)
     {
-        $range = new IP($profileConfig->getItem('range'));
-        $range6 = new IP($profileConfig->getItem('range6'));
-        $processCount = \count($profileConfig->getItem('vpnProtoPorts'));
+        $range = new IP($profileConfig->getRangeFour());
+        $range6 = new IP($profileConfig->getRangeSix());
+        $processCount = \count($profileConfig->getVpnProtoPorts());
 
         $allowedProcessCount = [1, 2, 4, 8, 16];
         if (!\in_array($processCount, $allowedProcessCount, true)) {
@@ -100,21 +108,21 @@ class OpenVpn
         $splitRange = $range->split($processCount);
         $splitRange6 = $range6->split($processCount);
 
-        $managementIp = $profileConfig->getItem('managementIp');
-        $profileNumber = $profileConfig->getItem('profileNumber');
+        $managementIp = $profileConfig->getManagementIp();
+        $profileNumber = $profileConfig->getProfileNumber();
 
         $processConfig = [
             'managementIp' => $managementIp,
         ];
 
         for ($i = 0; $i < $processCount; ++$i) {
-            list($proto, $port) = self::getProtoPort($profileConfig->getItem('vpnProtoPorts'), $profileConfig->getItem('listen'))[$i];
+            list($proto, $port) = self::getProtoPort($profileConfig->getVpnProtoPorts(), $profileConfig->getListen())[$i];
             $processConfig['range'] = $splitRange[$i];
             $processConfig['range6'] = $splitRange6[$i];
-            $processConfig['dev'] = sprintf('tun-%d-%d', $profileConfig->getItem('profileNumber'), $i);
+            $processConfig['dev'] = sprintf('tun-%d-%d', $profileConfig->getProfileNumber(), $i);
             $processConfig['proto'] = $proto;
             $processConfig['port'] = $port;
-            $processConfig['local'] = $profileConfig->getItem('listen');
+            $processConfig['local'] = $profileConfig->getListen();
             $processConfig['managementPort'] = 11940 + $this->toPort($profileNumber, $i);
             $processConfig['configName'] = sprintf(
                 '%s-%d.conf',
@@ -178,8 +186,8 @@ class OpenVpn
         $serverConfig = [
             'verb 3',
             'dev-type tun',
-            sprintf('user %s', $profileConfig->getItem('_user')),
-            sprintf('group %s', $profileConfig->getItem('_group')),
+            sprintf('user %s', $this->vpnUser),
+            sprintf('group %s', $this->vpnGroup),
             'topology subnet',
             'persist-key',
             'persist-tun',
@@ -190,8 +198,8 @@ class OpenVpn
             'ncp-ciphers AES-256-GCM',  // only AES-256-GCM
             'cipher AES-256-GCM',       // only AES-256-GCM
             'auth none',
-            sprintf('client-connect %s/client-connect', self::LIBEXEC_DIR),
-            sprintf('client-disconnect %s/client-disconnect', self::LIBEXEC_DIR),
+            sprintf('client-connect %s/client-connect', $this->libExecDir),
+            sprintf('client-disconnect %s/client-disconnect', $this->libExecDir),
             sprintf('ca %s/ca.crt', $tlsDir),
             sprintf('cert %s/server.crt', $tlsDir),
             sprintf('key %s/server.key', $tlsDir),
@@ -205,9 +213,10 @@ class OpenVpn
             sprintf('setenv PROFILE_ID %s', $profileId),
             sprintf('proto %s', $processConfig['proto']),
             sprintf('local %s', $processConfig['local']),
+            sprintf('tls-crypt %s/tls-crypt.key', $tlsDir),
         ];
 
-        if (!$profileConfig->getItem('enableLog')) {
+        if (!$profileConfig->getEnableLog()) {
             $serverConfig[] = 'log /dev/null';
         }
 
@@ -223,10 +232,6 @@ class OpenVpn
             // also ask the clients on UDP to tell us when they leave...
             // https://github.com/OpenVPN/openvpn/commit/422ecdac4a2738cd269361e048468d8b58793c4e
             $serverConfig[] = 'push "explicit-exit-notify 1"';
-        }
-
-        if ('tls-crypt' === $profileConfig->getItem('tlsProtection')) {
-            $serverConfig[] = sprintf('tls-crypt %s/tls-crypt.key', $tlsDir);
         }
 
         // Routes
@@ -263,9 +268,9 @@ class OpenVpn
      */
     private static function getRoutes(ProfileConfig $profileConfig)
     {
-        if ($profileConfig->getItem('defaultGateway')) {
+        if ($profileConfig->getDefaultGateway()) {
             $redirectFlags = ['def1', 'ipv6'];
-            if ($profileConfig->hasItem('blockLan') && $profileConfig->getItem('blockLan')) {
+            if ($profileConfig->getBlockLan()) {
                 $redirectFlags[] = 'block-local';
             }
 
@@ -285,7 +290,7 @@ class OpenVpn
         ];
 
         // there may be some routes specified, push those, and not the default
-        foreach ($profileConfig->getSection('routes')->toArray() as $route) {
+        foreach ($profileConfig->getRoutes() as $route) {
             $routeIp = new IP($route);
             if (6 === $routeIp->getFamily()) {
                 // IPv6
@@ -305,11 +310,11 @@ class OpenVpn
     private static function getDns(IP $rangeIp, IP $range6Ip, ProfileConfig $profileConfig)
     {
         $dnsEntries = [];
-        if ($profileConfig->getItem('defaultGateway')) {
+        if ($profileConfig->getDefaultGateway()) {
             // prevent DNS leakage on Windows when VPN is default gateway
             $dnsEntries[] = 'push "block-outside-dns"';
         }
-        $dnsList = $profileConfig->getSection('dns')->toArray();
+        $dnsList = $profileConfig->getDns();
         foreach ($dnsList as $dnsAddress) {
             // replace the macros by IP addresses (LOCAL_DNS)
             if ('@GW4@' === $dnsAddress) {
@@ -329,12 +334,12 @@ class OpenVpn
      */
     private static function getClientToClient(ProfileConfig $profileConfig)
     {
-        if (!$profileConfig->getItem('clientToClient')) {
+        if (!$profileConfig->getClientToClient()) {
             return [];
         }
 
-        $rangeIp = new IP($profileConfig->getItem('range'));
-        $range6Ip = new IP($profileConfig->getItem('range6'));
+        $rangeIp = new IP($profileConfig->getRangeFour());
+        $range6Ip = new IP($profileConfig->getRangeSix());
 
         return [
             'client-to-client',

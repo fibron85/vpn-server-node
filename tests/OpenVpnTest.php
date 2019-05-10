@@ -22,13 +22,13 @@ class OpenVpnTest extends TestCase
 
     private $tmpDir;
 
-    public function setUp()
+    public function setUp(): void
     {
         // create temporary directory
         $tmpDir = sprintf('%s/%s', sys_get_temp_dir(), bin2hex(random_bytes(16)));
         mkdir($tmpDir, 0700, true);
         $this->tmpDir = $tmpDir;
-        $this->openVpn = new OpenVpn($tmpDir);
+        $this->openVpn = new OpenVpn($tmpDir, '/usr/libexec/vpn-server-node', 'openvpn', 'openvpn');
         $this->serverClient = new ServerClient(
             new TestHttpClient(),
             'openVpnServerClient'
@@ -37,10 +37,10 @@ class OpenVpnTest extends TestCase
 
     public function testWriteProfiles()
     {
-        $this->openVpn->writeProfiles($this->serverClient, 'openvpn', 'openvpn', true);
+        $this->openVpn->writeProfiles($this->serverClient);
         $this->assertSame(
-            trim(file_get_contents(sprintf('%s/internet-0.conf', $this->tmpDir))),
-            trim(file_get_contents(sprintf('%s/data/internet-0.conf', __DIR__)))
+            trim(file_get_contents(sprintf('%s/default-0.conf', $this->tmpDir))),
+            trim(file_get_contents(sprintf('%s/data/default-0.conf', __DIR__)))
         );
     }
 }
