@@ -20,8 +20,10 @@
     "license": "AGPL-3.0-or-later",
     "name": "lc/vpn-server-node",
     "require": {
+        "ext-curl": "*",
         "ext-date": "*",
         "ext-filter": "*",
+        "ext-json": "*",
         "ext-mbstring": "*",
         "ext-openssl": "*",
         "ext-pcre": "*",
